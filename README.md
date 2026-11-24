@@ -184,7 +184,7 @@ RSCH implements OpenAI's documented
 [Sign in with ChatGPT for open-source tools](https://developers.openai.com/siwc/token-sharing-open-source)
 flow, so an eligible ChatGPT Plus or Pro user can use their own plan without an API key. **It has not been tested
 against a real ChatGPT account yet.** It is tested only against a fake OAuth server in
-`internal/chatgpt` (23 tests). So treat it as implemented, awaiting live verification, not as working.
+`internal/chatgpt` (18 tests, 23 cases with subtests). So treat it as implemented, awaiting live verification, not as working.
 
 Exact commands for the first live check, on a Mac with an eligible ChatGPT account:
 
