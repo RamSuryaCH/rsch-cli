@@ -8,12 +8,12 @@ The older slice-by-slice history is in [ROADMAP.md](ROADMAP.md).
 
 | # | Item | Why | Status |
 | --- | --- | --- | --- |
-| 1 | **Always-on automatic token optimiser ("fewer tokens, more done")**: budgeted context and smart file and line selection fed into the agent loop automatically; prompt and context compression; deduplication of repeated file reads and tool results; caching of repeated context; summarising long histories (in `exec` as well as the TUI); trimming tool output by relevance, not just a length cap | The top developer pain point is context and usage exhaustion (research §1, §2) | **partial.** `rsch context --budget` and `rsch search` work (CLI and MCP). Shell output has a 30k-character cap. TUI-only auto-compact is inherited from upstream. Compression, deduplication, caching, agent-loop integration and exec summarisation are **planned** |
-| 1a | **Token benchmark**: a fixed task set run with the optimiser on and off, counting tokens with a real tokenizer or the provider-reported `usage` (Ollama returns `prompt_tokens`/`completion_tokens`). Report the task success rate alongside tokens, and publish the harness, raw results and only measured numbers | Proves item 1 rather than claiming it | **planned.** The likely focus of Increment 2 |
+| 1 | **Always-on automatic token optimiser ("fewer tokens, more done")**: budgeted context and smart file and line selection fed into the agent loop automatically; prompt and context compression; deduplication of repeated file reads and tool results; caching of repeated context; summarising long histories (in `exec` as well as the TUI); trimming tool output by relevance, not just a length cap | The top developer pain point is context and usage exhaustion (research §1, §2) | **partial.** Done (3f0ee44, `internal/optimizer`, on by default, `--no-optimize` / `RSCH_OPTIMIZER=off`): head/tail trimming with markers, deduplication of identical tool outputs, a content-hash rewrite cache, deterministic compaction against the context window in `exec` and TUI, and per-request before/after accounting. Still planned: feeding `rsch context` into the loop automatically, relevance-based trimming, LLM summarisation in `exec` |
+| 1a | **Token benchmark**: a fixed task set run with the optimiser on and off, counting tokens with a real tokenizer | Proves item 1 rather than claiming it | **done** (deterministic replay with tiktoken, [bench/tokens](../bench/tokens/README.md)): median 7.7% fewer prompt tokens over 8 tasks, 0% on a tiny repository. Live runs with provider-reported usage and task success rate are **planned** |
 | 2 | **Local-first default provider** | Must work with no cloud service or API key | **done (steps 1, 2, 5, 6).** Auto-detects Ollama, then LM Studio; skips embedding models; local wins unless a model is configured; `provider-in-use` in `rsch doctor`; tests with a fake Ollama. Steps 3 and 4 are open. See [Default provider](#default-provider-today-and-what-local-first-would-take) |
 | 3 | Local models through `LOCAL_ENDPOINT` (Ollama, LM Studio) | Local-first use and no paid keys | **partial.** Config and reasoning fixes landed 2026-11-24 (c1c047c). The model is reached, but small models loop |
 | 4 | Smarter loop guard: identical result, A-B-A-B rotation, failure streaks, a corrective hint to the model before stopping | The most common local-model failure (research §4) | **planned.** Today's guard stops after 3 identical requests |
-| 5 | Context and token meter in the TUI and `exec` JSON (prompt, tool definitions and history tokens per turn) | Makes item 1 visible (research §1) | **partial.** `rsch cost` shows persisted session totals; nothing live per turn |
+| 5 | Context and token meter in the TUI and `exec` JSON (prompt, tool definitions and history tokens per turn) | Makes item 1 visible (research §1) | **partial.** `rsch cost` shows persisted session totals; `rsch exec` prints estimated history tokens before and after optimisation to stderr. Nothing in the TUI or JSON yet |
 | 6 | Subagent task tool: a parallel, scoped child session with its own permission profile and a summary returned to the parent | Keeps noisy work off the main context; all three comparison tools have it | **partial.** Only the upstream stateless read-only search agent exists |
 | 7 | MCP server mode | Lets editors and other agents reuse RSCH's budgeted context | **done** for 3 read-only tools (10ef2dc). Next: optional `review` and `checkpoint list` tools, and HTTP transport |
 | 8 | Agent-skill packaging (`SKILL.md` describing the `rsch search`/`context` CLI) | A lower-context alternative to MCP (research §2) | **planned** |
@@ -30,8 +30,8 @@ The older slice-by-slice history is in [ROADMAP.md](ROADMAP.md).
    (research §1). The benchmark turns it from a claim into a number reviewers can check.
 2. **Local-first default and a stronger loop guard (items 2, 4).** Without these, "works with no cloud" fails
    on first run: there is no default provider, and small models loop. Both are small, testable changes.
-3. **Provider layer clean-up (P1–P3 below).** Removing reads of another tool's stored Copilot credentials is
-   a correctness and terms issue, and a generic OpenAI-compatible provider unlocks Ollama, LM Studio, vLLM
+3. **Provider layer clean-up (P1–P3 below).** Removing reads of another tool's stored Copilot credentials
+   (done in aa51c6b) was a correctness and terms issue, and a generic OpenAI-compatible provider unlocks Ollama, LM Studio, vLLM
    and OpenRouter through one code path.
 4. **Live context meter (item 5).** It makes the optimiser visible and is cheap once token accounting exists.
 5. **Subagent task tool (item 6).** It has high value, but it is larger and depends on per-session token
@@ -63,9 +63,10 @@ Audit of `internal/llm/provider` and `internal/config` on 2026-11-24:
 - **P1.** Define one `Provider` interface that every backend implements: `Models()`, `Health()`, `Send`/`Stream`,
   and `Usage` reporting. Today each backend has its own client, wrapped by a generic `baseProvider`.
 - **P2.** Add the generic OpenAI-compatible type, plus Ollama and LM Studio presets on top of it.
-- **P3.** Stop reading another tool's stored Copilot credentials (`~/.config/github-copilot/*.json`). Keep
-  only an explicitly provided token (`GITHUB_TOKEN` or config) until GitHub documents a program RSCH qualifies
-  for. Mark the Copilot provider experimental and unsupported.
+- **P3. Done (aa51c6b).** RSCH no longer reads another tool's stored Copilot credentials
+  (`~/.config/github-copilot/*.json`), and a generic `GITHUB_TOKEN` no longer enables Copilot. Only an
+  explicitly provided token works (`RSCH_COPILOT_TOKEN` or `providers.copilot.apiKey`). The provider is
+  documented as experimental and unsupported until GitHub documents a program RSCH qualifies for.
 - **P4.** Health checks and per-provider token accounting (feeds items 1a and 5).
 - **P5.** Official Sign in with ChatGPT for plan usage. It is allowed for open-source, locally run apps; see
   [research.md](research.md#signing-in-with-an-existing-ai-subscription).

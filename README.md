@@ -12,16 +12,19 @@ are optional and bring-your-own-key. Every action is approval-gated.
 
 ## Token optimisation: what works today and what is planned
 
-The goal is always-on, automatic token optimisation. Today it is only partly there:
+The optimizer is on by default and runs on every model request, in the TUI and in `rsch exec`. Turn it off
+with `--no-optimize` or `RSCH_OPTIMIZER=off`.
 
 | Technique | Status (verified 2026-11-24 on Linux) |
 | --- | --- |
 | Token-budgeted context: `rsch context "<query>" --budget N` returns ranked file and line matches with provenance inside an approximate budget | **Works.** In the demo, a 400-token budget used 395 tokens across 3 selected files |
 | Smart file and line selection: `rsch search`, plus `get_context` and `search_repository` over MCP | **Works** for search and context retrieval. Not yet wired automatically into the agent loop |
-| Trimming tool output | **Partial.** Inherited from upstream: shell output is capped at 30,000 characters. No smarter trimming |
-| Summarising long histories (auto-compact at 95% of the context window) | **Partial.** Inherited from upstream and wired into the TUI only. Not verified here |
-| Prompt and context compression, deduplication, caching of repeated context | **Planned.** See [roadmap item 1](docs/roadmap.md) |
-| Measured token savings | **None yet.** A benchmark that runs the same tasks with the optimiser on and off is planned. Only measured numbers will be published |
+| Tool-output trimming: head and tail kept, with a marker saying how many lines were cut; 16 KB cap on the two most recent outputs, 4 KB on older ones | **Works** (`internal/optimizer`, unit-tested, used in the agent loop) |
+| Deduplication of repeated tool outputs (for example the same file read twice): the latest copy is kept, older copies become a reference | **Works** (unit-tested; fires in the benchmark) |
+| Content-hash cache: each block is rewritten once and reused byte-for-byte on later turns, so the prompt prefix stays stable | **Works** (unit-tested). It does not by itself remove tokens |
+| Compaction outside the TUI: oldest tool outputs are stubbed when history exceeds 60% of the model's context window | **Works** in unit tests. It did not trigger in the benchmark tasks. The inherited LLM auto-compact remains TUI-only |
+| Per-request accounting: history tokens before and after (estimated at 4 bytes per token) | **Works.** `rsch exec` prints a summary line to stderr. Not yet in the TUI or exec JSON |
+| Measured token savings ([bench/tokens](bench/tokens/README.md), tiktoken o200k_base, deterministic replay, no model calls) | **Median 7.7% over 8 tasks.** 5.5–22.9% on this repository, 0% on a tiny sample repository. Mixed; see the method |
 
 Token counts in `rsch context` are approximate: about 4 bytes per token (`approximateTokens` in `internal/intelligence`), not a model tokenizer.
 
