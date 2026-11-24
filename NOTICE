@@ -28,4 +28,14 @@ system sandbox-exec tool; the general approach of a Seatbelt-confined
 workspace was inspired by Codex CLI. If Codex-derived code is added later,
 its Apache-2.0 license text and change notices must be added here.
 
+Sign in with ChatGPT (internal/chatgpt) is an independent implementation of
+OpenAI's public documentation (developers.openai.com/siwc and the cookbook
+article "Integrating Sign in with ChatGPT in your open-source app"). OpenAI's
+Sign-in with ChatGPT DevKit (github.com/openai/sign-in-with-chatgpt-devkit)
+and its Paste Perfect example were consulted as a reference for the
+documented behaviour, but no DevKit code is included: the DevKit is
+published under the Sign-in with ChatGPT DevKit Noncommercial License v1.0,
+which is not compatible with this project's MIT License. "ChatGPT" and
+"OpenAI" are trademarks of OpenAI.
+
 Third-party Go dependencies are listed in go.mod and keep their own licenses.

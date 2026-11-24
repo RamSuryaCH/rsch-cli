@@ -712,6 +712,15 @@ The AI assistant can access LSP features through the `diagnostics` tool, allowin
 
 While the LSP client implementation supports the full LSP protocol (including completions, hover, definition, etc.), currently only diagnostics are exposed to the AI assistant.
 
+## Using your ChatGPT plan (implemented, awaiting live verification)
+
+`rsch login chatgpt` signs in with ChatGPT through OpenAI's documented flow for open-source tools. Then
+`rsch chatgpt status`, `rsch chatgpt models` and `rsch chatgpt ask "<prompt>"` use your plan through the
+Responses API, and `rsch logout chatgpt` revokes the session. Credentials are stored with `0600` permissions in
+`chatgpt-auth.json` in RSCH's config directory. Set `RSCH_CHATGPT_DIR` to store them elsewhere. Review and limit
+RSCH's usage at <https://chatgpt.com/settings/usage>. Not yet tested with a real account. See the README for
+details.
+
 ## Using GitHub Copilot (experimental, explicit opt-in only)
 
 The Copilot provider is inherited from upstream and is **experimental and unsupported**. GitHub officially

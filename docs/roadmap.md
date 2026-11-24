@@ -37,7 +37,8 @@ The older slice-by-slice history is in [ROADMAP.md](ROADMAP.md).
 5. **Subagent task tool (item 6).** It has high value, but it is larger and depends on per-session token
    accounting and permission profiles.
 6. **Official Sign in with ChatGPT (P5).** It is the only sanctioned subscription path for a local
-   open-source app (research, subscription section). It is worth doing after the provider layer is clean.
+   open-source app (research, subscription section). It is implemented as a standalone command and awaits a
+   live check.
 7. **Releases and Homebrew tap (item 10).** These matter for adoption, but they are gated on Surya's go-ahead.
 
 ## Pluggable provider layer
@@ -68,7 +69,11 @@ Audit of `internal/llm/provider` and `internal/config` on 2026-11-24:
   explicitly provided token works (`RSCH_COPILOT_TOKEN` or `providers.copilot.apiKey`). The provider is
   documented as experimental and unsupported until GitHub documents a program RSCH qualifies for.
 - **P4.** Health checks and per-provider token accounting (feeds items 1a and 5).
-- **P5.** Official Sign in with ChatGPT for plan usage. It is allowed for open-source, locally run apps; see
+- **P5. Implemented, awaiting live verification.** Official Sign in with ChatGPT for plan usage (`internal/chatgpt`;
+  `rsch login chatgpt`, `rsch chatgpt status|models|ask`, `rsch logout chatgpt`). It is tested against a fake
+  OAuth server only, and no real account has signed in yet. Next steps: a live check on a Mac, then making the
+  ChatGPT plan a provider for the agent loop (Responses API with function tools) and supporting several saved
+  accounts. Allowed for open-source, locally run apps; see
   [research.md](research.md#signing-in-with-an-existing-ai-subscription).
 - No subscription sign-in for Anthropic, Kiro, Gemini, Copilot or xAI unless their documented policies change.
   Use their API keys, cloud credentials (Bedrock, Vertex) or local models instead.

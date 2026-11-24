@@ -178,6 +178,49 @@ export ANTHROPIC_API_KEY=...        # or OPENAI_API_KEY, GEMINI_API_KEY, ...
 For local models, the server's context window must hold RSCH's agent prompt and tool definitions, which come
 to about 10k tokens. Ollama's default is 4096. See [docs/usage.md](docs/usage.md#using-a-self-hosted-model-provider).
 
+### Sign in with ChatGPT (implemented, awaiting live verification)
+
+RSCH implements OpenAI's documented
+[Sign in with ChatGPT for open-source tools](https://developers.openai.com/siwc/token-sharing-open-source)
+flow, so an eligible ChatGPT Plus or Pro user can use their own plan without an API key. **It has not been tested
+against a real ChatGPT account yet.** It is tested only against a fake OAuth server in
+`internal/chatgpt` (23 tests). So treat it as implemented, awaiting live verification, not as working.
+
+Exact commands for the first live check, on a Mac with an eligible ChatGPT account:
+
+```bash
+git clone https://github.com/RamSuryaCH/rsch-cli.git && cd rsch-cli
+go build -o rsch .
+./rsch login chatgpt        # opens the browser; approve RSCH CLI and ChatGPT plan usage
+./rsch chatgpt status       # expect: "Using ChatGPT plan. Manage usage: https://chatgpt.com/settings/usage"
+./rsch chatgpt models       # the models your plan offers (slug and display name)
+./rsch chatgpt ask "Reply with exactly: Token sharing works."
+./rsch logout chatgpt       # revokes the session and clears local tokens
+```
+
+- **Sign-in.** `rsch login chatgpt` registers this installation dynamically with `client_id=dynamic_agent_client`,
+  `agent_name_hint=RSCH CLI` and a per-installation `ext_agent_host_id`. It uses PKCE (S256), state and nonce, and
+  a `127.0.0.1` callback (port 1455, or another free port).
+- **Scopes requested:** `openid profile email offline_access resource.invoke chatgpt.tokens.use.direct` for the
+  resource `https://api.openai.com/v1`.
+- **Verification.** The ID token is checked against OpenAI's JWKS: RS256 signature, issuer, audience (the issued
+  client ID), expiry and nonce.
+- **Plan usage.** It is turned on only if the token response grants `chatgpt.tokens.use.direct`.
+- **Storage.** Credentials go in `chatgpt-host.json` and `chatgpt-auth.json` in RSCH's config directory
+  (`~/Library/Application Support/rsch` on macOS, `~/.config/rsch` on Linux). Both files are written atomically
+  with `0600` permissions; the OS keychain is not used yet.
+- **No secrets in the repo.** There is no client ID or secret here: OpenAI issues the client ID during sign-in.
+  The issued ID is saved before the code exchange, so a failed exchange does not register a second client.
+- **Tokens.** They are refreshed near expiry, with a lock so two processes don't race the rotating refresh
+  token. Logout revokes the refresh token through the discovered `revocation_endpoint`.
+- **Requests.** They use the public Responses API (`POST /v1/responses`, `store: false`, `stream: true`) and
+  succeed only on `response.completed`. Usage-limit errors link to Manage usage.
+- **Checked against live OpenAI endpoints, without signing in:** the discovery document's issuer and endpoints
+  match the docs, the production JWKS parses (4 RS256 keys), and the generated authorization URL contains the
+  documented parameters.
+- **Not yet:** `rsch chatgpt` is a separate command, so the ChatGPT plan is not yet a provider for the main agent
+  loop (`rsch` / `rsch exec`), and there is no picker for several accounts.
+
 ### Use RSCH from an MCP client
 
 ```bash
@@ -198,7 +241,7 @@ npx -y @modelcontextprotocol/inspector --cli ./rsch mcp serve --method tools/lis
 
 ```bash
 go vet ./...
-go test ./...          # 84 packages pass on Linux x86-64 (Go 1.27.3) as of 2026-11-24
+go test ./...          # 86 packages pass on Linux x86-64 (Go 1.27.3) as of 2026-11-24
 ```
 
 Run the tests with `LOCAL_ENDPOINT` unset. Discovered local models are added to the generated config schema,
