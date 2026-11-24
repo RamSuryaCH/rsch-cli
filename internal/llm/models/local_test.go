@@ -25,3 +25,24 @@ func TestConvertLocalModelUsesAdvertisedContextLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertLocalModelReasoningIsOptIn(t *testing.T) {
+	t.Setenv("LOCAL_ENDPOINT_REASONING", "")
+	if convertLocalModel(localModel{ID: "llama3.2:3b"}).CanReason {
+		t.Fatal("local models must not send reasoning parameters unless explicitly enabled")
+	}
+	t.Setenv("LOCAL_ENDPOINT_REASONING", "true")
+	if !convertLocalModel(localModel{ID: "qwen3:8b"}).CanReason {
+		t.Fatal("LOCAL_ENDPOINT_REASONING=true should enable reasoning for local models")
+	}
+}
+
+func TestLoadLocalModelsRecordsDefaultModel(t *testing.T) {
+	previous := DefaultLocalModelID
+	t.Cleanup(func() { DefaultLocalModelID = previous })
+	DefaultLocalModelID = ""
+	loadLocalModels([]localModel{{ID: "first"}, {ID: "second"}})
+	if DefaultLocalModelID != ModelID("local.first") {
+		t.Fatalf("default local model = %q, want local.first", DefaultLocalModelID)
+	}
+}

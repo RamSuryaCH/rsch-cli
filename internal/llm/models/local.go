@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -53,8 +54,6 @@ func init() {
 		}
 
 		loadLocalModels(models)
-
-		viper.SetDefault("providers.local.apiKey", "dummy")
 		ProviderPopularity[ProviderLocal] = 0
 	}
 }
@@ -128,18 +127,34 @@ func listLocalModels(modelsEndpoint string) []localModel {
 	return supportedModels
 }
 
+// DefaultLocalModelID is the model discovered from LOCAL_ENDPOINT that agents
+// use when no model is configured. It is kept outside viper because
+// config.Load resets viper and must re-apply local defaults afterwards.
+var DefaultLocalModelID ModelID
+
 func loadLocalModels(models []localModel) {
 	for i, m := range models {
 		model := convertLocalModel(m)
 		SupportedModels[model.ID] = model
 
 		if i == 0 || m.State == "loaded" {
-			viper.SetDefault("agents.coder.model", model.ID)
-			viper.SetDefault("agents.summarizer.model", model.ID)
-			viper.SetDefault("agents.task.model", model.ID)
-			viper.SetDefault("agents.title.model", model.ID)
+			DefaultLocalModelID = model.ID
 		}
 	}
+	ApplyLocalDefaults()
+}
+
+// ApplyLocalDefaults registers the discovered local model and a placeholder
+// API key as viper defaults. Explicit configuration still takes precedence.
+func ApplyLocalDefaults() {
+	if DefaultLocalModelID == "" {
+		return
+	}
+	viper.SetDefault("agents.coder.model", DefaultLocalModelID)
+	viper.SetDefault("agents.summarizer.model", DefaultLocalModelID)
+	viper.SetDefault("agents.task.model", DefaultLocalModelID)
+	viper.SetDefault("agents.title.model", DefaultLocalModelID)
+	viper.SetDefault("providers.local.apiKey", "dummy")
 }
 
 func convertLocalModel(model localModel) Model {
@@ -151,15 +166,24 @@ func convertLocalModel(model localModel) Model {
 		contextWindow = 4096
 	}
 	return Model{
-		ID:                  ModelID("local." + model.ID),
-		Name:                friendlyModelName(model.ID),
-		Provider:            ProviderLocal,
-		APIModel:            model.ID,
-		ContextWindow:       contextWindow,
-		DefaultMaxTokens:    contextWindow,
-		CanReason:           true,
+		ID:               ModelID("local." + model.ID),
+		Name:             friendlyModelName(model.ID),
+		Provider:         ProviderLocal,
+		APIModel:         model.ID,
+		ContextWindow:    contextWindow,
+		DefaultMaxTokens: contextWindow,
+		// OpenAI-compatible local servers (Ollama, LM Studio) reject a
+		// reasoning_effort parameter for models without a thinking mode, and
+		// the models endpoint does not report that capability. Reasoning is
+		// therefore opt-in with LOCAL_ENDPOINT_REASONING=true.
+		CanReason:           localReasoningEnabled(),
 		SupportsAttachments: true,
 	}
+}
+
+func localReasoningEnabled() bool {
+	enabled, err := strconv.ParseBool(strings.TrimSpace(os.Getenv("LOCAL_ENDPOINT_REASONING")))
+	return err == nil && enabled
 }
 
 var modelInfoRegex = regexp.MustCompile(`(?i)^([a-z0-9]+)(?:[-_]?([rv]?\d[\.\d]*))?(?:[-_]?([a-z]+))?.*`)

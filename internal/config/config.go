@@ -389,6 +389,11 @@ func setDefaults(debug bool) {
 func setProviderDefaults() {
 	// Set all API keys we can find in the environment
 	// Note: Viper does not default if the json apiKey is ""
+	// Local models are discovered at package init, before Load resets viper,
+	// so their defaults must be re-applied here.
+	if strings.TrimSpace(os.Getenv("LOCAL_ENDPOINT")) != "" {
+		models.ApplyLocalDefaults()
+	}
 	if apiKey := os.Getenv("ANTHROPIC_API_KEY"); apiKey != "" {
 		viper.SetDefault("providers.anthropic.apiKey", apiKey)
 	}
@@ -754,7 +759,7 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 	}
 
 	// Validate reasoning effort for models that support reasoning
-	if model.CanReason && provider == models.ProviderOpenAI || provider == models.ProviderLocal {
+	if model.CanReason && (provider == models.ProviderOpenAI || provider == models.ProviderLocal) {
 		if agent.ReasoningEffort == "" {
 			// Set default reasoning effort for models that support it
 			logging.Info("setting default reasoning effort for model that supports reasoning",
