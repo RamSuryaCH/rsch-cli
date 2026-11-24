@@ -108,7 +108,10 @@ func applyOpenAIProviderDefaults(providerName models.ModelProvider, options *ope
 	case models.ProviderXAI:
 		options.baseURL = "https://api.x.ai/v1"
 	case models.ProviderLocal:
-		options.baseURL = os.Getenv("LOCAL_ENDPOINT")
+		options.baseURL = models.LocalEndpoint
+		if options.baseURL == "" {
+			options.baseURL = os.Getenv("LOCAL_ENDPOINT")
+		}
 	}
 }
 

@@ -146,9 +146,16 @@ to assist developers in writing, debugging, and understanding code directly from
 				}
 			}()
 		}
-		_, err = config.Load(cwd, debug)
+		loadedConfig, err := config.Load(cwd, debug)
 		if err != nil {
 			return err
+		}
+		if prompt != "" {
+			// Say which provider runs the prompt. Stderr keeps stdout clean for
+			// --output-format json and piping.
+			if detail, ok := config.ActiveProvider(loadedConfig); ok {
+				fmt.Fprintf(cmd.ErrOrStderr(), "rsch: using %s\n", detail)
+			}
 		}
 		var outputSchema *format.OutputSchema
 		if strings.TrimSpace(outputSchemaPath) != "" {

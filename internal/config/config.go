@@ -245,6 +245,7 @@ func Load(workingDir string, debug bool) (*Config, error) {
 		return loaded, err
 	}
 
+	detectLocalProvider()
 	setProviderDefaults()
 
 	// Apply configuration to the struct
@@ -389,11 +390,6 @@ func setDefaults(debug bool) {
 func setProviderDefaults() {
 	// Set all API keys we can find in the environment
 	// Note: Viper does not default if the json apiKey is ""
-	// Local models are discovered at package init, before Load resets viper,
-	// so their defaults must be re-applied here.
-	if strings.TrimSpace(os.Getenv("LOCAL_ENDPOINT")) != "" {
-		models.ApplyLocalDefaults()
-	}
 	if apiKey := os.Getenv("ANTHROPIC_API_KEY"); apiKey != "" {
 		viper.SetDefault("providers.anthropic.apiKey", apiKey)
 	}
@@ -423,7 +419,16 @@ func setProviderDefaults() {
 		}
 	}
 
-	// Use this order to set the default models
+	// Local first: a local server from LOCAL_ENDPOINT or auto-detection
+	// supplies the default models, even when hosted keys are present. Local
+	// models are discovered before Load resets viper, so their defaults are
+	// re-applied here. Explicit agents.*.model settings still win.
+	if models.LocalEndpoint != "" && models.DefaultLocalModelID != "" {
+		models.ApplyLocalDefaults()
+		return
+	}
+
+	// Otherwise use this order to set the default models
 	// 1. Copilot
 	// 2. Anthropic
 	// 3. OpenAI
@@ -1014,7 +1019,7 @@ func providerCredentialsAvailable(provider models.ModelProvider, providerCfg Pro
 		return configuredAzureCredentialMode(providerCfg) != azureCredentialUnavailable
 	}
 	if provider == models.ProviderLocal {
-		return strings.TrimSpace(providerCfg.APIKey) != "" || strings.TrimSpace(os.Getenv("LOCAL_ENDPOINT")) != ""
+		return strings.TrimSpace(providerCfg.APIKey) != "" || strings.TrimSpace(os.Getenv("LOCAL_ENDPOINT")) != "" || models.LocalEndpoint != ""
 	}
 	return strings.TrimSpace(providerCfg.APIKey) != ""
 }

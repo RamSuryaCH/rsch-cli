@@ -735,17 +735,25 @@ This is useful for developers who want to experiment with custom models.
 
 ### Configuring a self-hosted provider
 
-You can use a self-hosted model by setting the `LOCAL_ENDPOINT` environment variable.
+With no model configured, RSCH looks for a local server on its own: it probes Ollama
+(`http://localhost:11434/v1`) and then LM Studio (`http://localhost:1234/v1`) with a 750 ms timeout and uses
+the first one that lists a chat model. Embedding-only models such as `nomic-embed-text` are skipped. A local
+server found this way is preferred over hosted API keys in the environment; set `agents.coder.model` to choose
+a hosted model explicitly. `RSCH_LOCAL_CANDIDATES` (comma-separated base URLs) replaces the probe list, and
+`RSCH_NO_LOCAL_DETECT=1` turns probing off. `rsch doctor` shows the result as `provider-in-use`, and
+`rsch exec` prints it to stderr.
+
+To use a server elsewhere, set the `LOCAL_ENDPOINT` environment variable.
 This will cause RSCH to load and use the models from the specified endpoint.
 
 ```bash
 # LM Studio
-LOCAL_ENDPOINT=http://localhost:1235/v1
+LOCAL_ENDPOINT=http://localhost:1234/v1
 # Ollama (include /v1; the OpenAI-compatible API lives there)
 LOCAL_ENDPOINT=http://localhost:11434/v1
 ```
 
-The first listed model (or the model LM Studio reports as loaded) becomes the default for every agent unless
+The first listed chat model (or the model LM Studio reports as loaded) becomes the default for every agent unless
 `agents.<name>.model` is set. Local models do not receive a
 `reasoning_effort` parameter unless `LOCAL_ENDPOINT_REASONING=true`, because
 Ollama rejects it for models without a thinking mode. RSCH's agent prompt plus

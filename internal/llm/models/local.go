@@ -24,38 +24,85 @@ const (
 	lmStudioBetaModelsPath = "api/v0/models"
 )
 
+// LocalEndpoint is the OpenAI-compatible base URL of the local model server
+// in use, either LOCAL_ENDPOINT or one found by DetectLocal. Empty when no
+// local server is in use.
+var LocalEndpoint string
+
+// LocalEndpointSource describes how LocalEndpoint was chosen: "LOCAL_ENDPOINT"
+// or "auto-detected".
+var LocalEndpointSource string
+
+// DefaultLocalCandidates are the OpenAI-compatible endpoints probed when no
+// provider is configured: Ollama, then LM Studio, at their default ports.
+var DefaultLocalCandidates = []string{
+	"http://localhost:11434/v1",
+	"http://localhost:1234/v1",
+}
+
 func init() {
 	if endpoint := os.Getenv("LOCAL_ENDPOINT"); endpoint != "" {
-		localEndpoint, err := url.Parse(endpoint)
-		if err != nil {
-			logging.Debug("Failed to parse local endpoint",
-				"error", err,
-				"endpoint", endpoint,
-			)
-			return
+		if DiscoverLocal(endpoint, 10*time.Second) {
+			LocalEndpointSource = "LOCAL_ENDPOINT"
 		}
-
-		load := func(url *url.URL, path string) []localModel {
-			url.Path = path
-			return listLocalModels(url.String())
-		}
-
-		models := load(localEndpoint, lmStudioBetaModelsPath)
-
-		if len(models) == 0 {
-			models = load(localEndpoint, localModelsPath)
-		}
-
-		if len(models) == 0 {
-			logging.Debug("No local models found",
-				"endpoint", endpoint,
-			)
-			return
-		}
-
-		loadLocalModels(models)
-		ProviderPopularity[ProviderLocal] = 0
 	}
+}
+
+// DiscoverLocal lists the chat models served at endpoint and, when at least
+// one is found, registers them and makes the endpoint the local provider.
+func DiscoverLocal(endpoint string, timeout time.Duration) bool {
+	localEndpoint, err := url.Parse(endpoint)
+	if err != nil || localEndpoint.Hostname() == "" {
+		logging.Debug("Failed to parse local endpoint", "error", err, "endpoint", endpoint)
+		return false
+	}
+	load := func(path string) []localModel {
+		candidate := *localEndpoint
+		candidate.Path = path
+		return listLocalModelsWithTimeout(candidate.String(), timeout)
+	}
+	models := load(lmStudioBetaModelsPath)
+	if len(models) == 0 {
+		models = load(localModelsPath)
+	}
+	models = chatModels(models)
+	if len(models) == 0 {
+		logging.Debug("No local chat models found", "endpoint", endpoint)
+		return false
+	}
+	LocalEndpoint = endpoint
+	loadLocalModels(models)
+	ProviderPopularity[ProviderLocal] = 0
+	return true
+}
+
+// DetectLocal probes candidate endpoints in order with a short timeout and
+// uses the first one that serves a chat model. It returns the endpoint used,
+// or "" when none is reachable.
+func DetectLocal(candidates []string, timeout time.Duration) string {
+	if LocalEndpoint != "" {
+		return LocalEndpoint
+	}
+	for _, candidate := range candidates {
+		if DiscoverLocal(candidate, timeout) {
+			LocalEndpointSource = "auto-detected"
+			return candidate
+		}
+	}
+	return ""
+}
+
+// chatModels drops embedding-only models, which cannot serve chat requests
+// but are often listed first by Ollama (for example nomic-embed-text).
+func chatModels(models []localModel) []localModel {
+	var chat []localModel
+	for _, model := range models {
+		if model.Type == "embeddings" || strings.Contains(strings.ToLower(model.ID), "embed") {
+			continue
+		}
+		chat = append(chat, model)
+	}
+	return chat
 }
 
 type localModelList struct {
@@ -76,12 +123,16 @@ type localModel struct {
 }
 
 func listLocalModels(modelsEndpoint string) []localModel {
+	return listLocalModelsWithTimeout(modelsEndpoint, 10*time.Second)
+}
+
+func listLocalModelsWithTimeout(modelsEndpoint string, timeout time.Duration) []localModel {
 	parsed, err := url.Parse(modelsEndpoint)
 	if err != nil || parsed.Hostname() == "" {
 		logging.Debug("Failed to parse local model endpoint", "endpoint", modelsEndpoint, "error", err)
 		return []localModel{}
 	}
-	response, err := (network.Policy{AllowedHosts: []string{parsed.Hostname()}, AllowPrivate: true, Timeout: 10 * time.Second, MaxBody: 8 << 20}).Fetch(context.Background(), modelsEndpoint)
+	response, err := (network.Policy{AllowedHosts: []string{parsed.Hostname()}, AllowPrivate: true, Timeout: timeout, MaxBody: 8 << 20}).Fetch(context.Background(), modelsEndpoint)
 	if err != nil {
 		logging.Debug("Failed to list local models",
 			"error", err,

@@ -25,9 +25,13 @@ The goal is always-on, automatic token optimisation. Today it is only partly the
 
 Token counts in `rsch context` are approximate: about 4 bytes per token (`approximateTokens` in `internal/intelligence`), not a model tokenizer.
 
-**Defaults today:** RSCH does **not** yet pick a local model on its own. It uses a local server only when
-`LOCAL_ENDPOINT` is set (for example `http://localhost:11434/v1` for Ollama). Otherwise it uses the first
-hosted provider whose credentials it finds. Making local the default is on the [roadmap](docs/roadmap.md).
+**Defaults today (local first):** with no model configured, RSCH probes Ollama (`http://localhost:11434/v1`)
+and then LM Studio (`http://localhost:1234/v1`) with a 750 ms timeout and uses the first chat model it finds,
+skipping embedding models. `LOCAL_ENDPOINT` picks a server explicitly, and an explicit `agents.coder.model`
+always wins. A hosted provider is used only when it is configured that way or when no local server answers.
+`rsch exec` prints the provider in use to stderr (for example
+`rsch: using local (auto-detected http://localhost:11434/v1), model llama3.2-3b-16k:latest`), and `rsch doctor`
+reports it as `provider-in-use`. Set `RSCH_NO_LOCAL_DETECT=1` to turn probing off.
 
 ## Built on OpenCode, and what is new
 
@@ -156,10 +160,12 @@ go build -trimpath -o rsch .
 ./rsch search "func main" --limit 5
 ./rsch context "how are background jobs stopped" --budget 800
 
-# Local model through Ollama, with no API key (OpenAI-compatible API, so include /v1)
-export LOCAL_ENDPOINT=http://localhost:11434/v1
-./rsch doctor                        # should report a configured local provider
+# Local model through Ollama, with no API key and no config: RSCH finds it on localhost:11434
+ollama serve &                       # if it is not already running
+./rsch doctor                        # provider-in-use: ok (local (auto-detected http://localhost:11434/v1), ...)
 ./rsch                               # interactive TUI
+# Elsewhere? Point at it explicitly (OpenAI-compatible API, so include /v1)
+export LOCAL_ENDPOINT=http://gpu-box:11434/v1
 
 # Optional: a hosted provider (bring your own key)
 export ANTHROPIC_API_KEY=...        # or OPENAI_API_KEY, GEMINI_API_KEY, ...

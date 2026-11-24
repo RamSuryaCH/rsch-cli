@@ -10,7 +10,7 @@ The older slice-by-slice history is in [ROADMAP.md](ROADMAP.md).
 | --- | --- | --- | --- |
 | 1 | **Always-on automatic token optimiser ("fewer tokens, more done")**: budgeted context and smart file and line selection fed into the agent loop automatically; prompt and context compression; deduplication of repeated file reads and tool results; caching of repeated context; summarising long histories (in `exec` as well as the TUI); trimming tool output by relevance, not just a length cap | The top developer pain point is context and usage exhaustion (research §1, §2) | **partial.** `rsch context --budget` and `rsch search` work (CLI and MCP). Shell output has a 30k-character cap. TUI-only auto-compact is inherited from upstream. Compression, deduplication, caching, agent-loop integration and exec summarisation are **planned** |
 | 1a | **Token benchmark**: a fixed task set run with the optimiser on and off, counting tokens with a real tokenizer or the provider-reported `usage` (Ollama returns `prompt_tokens`/`completion_tokens`). Report the task success rate alongside tokens, and publish the harness, raw results and only measured numbers | Proves item 1 rather than claiming it | **planned.** The likely focus of Increment 2 |
-| 2 | **Local-first default provider** | Must work with no cloud service or API key | **planned.** See [Default provider](#default-provider-today-and-what-local-first-would-take) |
+| 2 | **Local-first default provider** | Must work with no cloud service or API key | **done (steps 1, 2, 5, 6).** Auto-detects Ollama, then LM Studio; skips embedding models; local wins unless a model is configured; `provider-in-use` in `rsch doctor`; tests with a fake Ollama. Steps 3 and 4 are open. See [Default provider](#default-provider-today-and-what-local-first-would-take) |
 | 3 | Local models through `LOCAL_ENDPOINT` (Ollama, LM Studio) | Local-first use and no paid keys | **partial.** Config and reasoning fixes landed 2026-11-24 (c1c047c). The model is reached, but small models loop |
 | 4 | Smarter loop guard: identical result, A-B-A-B rotation, failure streaks, a corrective hint to the model before stopping | The most common local-model failure (research §4) | **planned.** Today's guard stops after 3 identical requests |
 | 5 | Context and token meter in the TUI and `exec` JSON (prompt, tool definitions and history tokens per turn) | Makes item 1 visible (research §1) | **partial.** `rsch cost` shows persisted session totals; nothing live per turn |
@@ -76,12 +76,15 @@ Audit of `internal/llm/provider` and `internal/config` on 2026-11-24:
 
 Checked in `internal/config/config.go` and `internal/llm/models/local.go` on 2026-11-24.
 
-- **Today:** a local server is used only when `LOCAL_ENDPOINT` is set. Its models are discovered at package
-  init, and the first listed model (or LM Studio's loaded one) becomes the default for every agent. Without
-  `LOCAL_ENDPOINT`, RSCH picks the first hosted provider with credentials in this order: Copilot, Anthropic,
-  OpenAI, Gemini, Groq, OpenRouter, xAI, Bedrock, Azure, then Vertex AI. If none is found, `rsch exec` fails
-  with `agent coder not found`. **So it is not local-first yet.**
-- **What changing it would take:**
+- **Before 2026-11-24:** a local server was used only when `LOCAL_ENDPOINT` was set. Otherwise RSCH picked the
+  first hosted provider with credentials (Copilot, Anthropic, OpenAI, Gemini, Groq, OpenRouter, xAI, Bedrock,
+  Azure, Vertex AI), and with none it failed with `agent coder not found`.
+- **Now:** steps 1, 2, 5 and 6 below are implemented (`internal/config/local_detect.go`, tests in
+  `local_detect_test.go`). Verified on the Linux box: with no config and no keys, `rsch doctor` reports
+  `provider-in-use: ok (local (auto-detected http://localhost:11434/v1), model llama3.2-3b-16k:latest)` and
+  `rsch -p "Reply with the single word OK."` answered `OK` through Ollama. With nothing reachable, doctor
+  fails `provider-in-use` with a setup hint. Steps 3 and 4 are still open.
+- **The plan:**
   1. When no provider is configured, probe `http://localhost:11434/v1/models` (Ollama) and
      `http://localhost:1234/v1/models` (LM Studio) with a short timeout. Do this lazily in `config.Load`
      rather than with network I/O in a package `init()`.

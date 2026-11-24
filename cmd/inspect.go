@@ -194,6 +194,7 @@ var doctorCmd = &cobra.Command{
 			requiredDoctorCheck("provider-configuration", configErr == nil, fmt.Sprintf("%d providers configured", providerCount(loaded))),
 			requiredDoctorCheck("model-configuration", configErr == nil && agentCount(loaded) > 0, fmt.Sprintf("%d agents configured", agentCount(loaded))),
 			requiredDoctorCheck("authentication", authenticationConfigured(loaded), authenticationDetail(loaded)),
+			providerInUseCheck(loaded),
 			requiredDoctorCheck("MCP-configuration", configErr == nil, fmt.Sprintf("%d MCP servers configured", mcpCount(loaded))),
 			requiredDoctorCheck("storage", isWritableOrCreatable(storageDirectory), storageDirectory),
 			optionalDoctorCheck("cache", isWritableOrCreatable(filepath.Join(storageDirectory, "cache")), filepath.Join(storageDirectory, "cache")+"; cache is created on demand"),
@@ -261,6 +262,11 @@ type doctorCheck struct {
 	OK       bool   `json:"ok"`
 	Detail   string `json:"detail"`
 	Severity string `json:"severity"`
+}
+
+func providerInUseCheck(loaded *config.Config) doctorCheck {
+	detail, ok := config.ActiveProvider(loaded)
+	return requiredDoctorCheck("provider-in-use", ok, detail)
 }
 
 func requiredDoctorCheck(name string, ok bool, detail string) doctorCheck {
