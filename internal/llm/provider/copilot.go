@@ -171,24 +171,15 @@ func newCopilotClient(opts providerClientOptions) CopilotClient {
 		var githubToken string
 
 		// 1. Environment variable
-		githubToken = os.Getenv("GITHUB_TOKEN")
+		githubToken = os.Getenv(config.CopilotTokenEnv)
 
 		// 2. API key from options
 		if githubToken == "" {
 			githubToken = opts.apiKey
 		}
 
-		// 3. Standard GitHub CLI/Copilot locations
 		if githubToken == "" {
-			var err error
-			githubToken, err = config.LoadGitHubToken()
-			if err != nil {
-				logging.Debug("Failed to load GitHub token from standard locations", "error", err)
-			}
-		}
-
-		if githubToken == "" {
-			logging.Error("GitHub token is required for Copilot provider. Set GITHUB_TOKEN environment variable, configure it in opencode.json, or ensure GitHub CLI/Copilot is properly authenticated.")
+			logging.Error("A Copilot token is required for the Copilot provider. Set RSCH_COPILOT_TOKEN or providers.copilot.apiKey; RSCH does not read tokens stored by other tools.")
 			client.initErr = errors.New("GitHub token is required for Copilot provider")
 			return client
 		}
@@ -643,20 +634,11 @@ func (c *copilotClient) shouldRetry(ctx context.Context, attempts int, err error
 		var githubToken string
 
 		// 1. Environment variable
-		githubToken = os.Getenv("GITHUB_TOKEN")
+		githubToken = os.Getenv(config.CopilotTokenEnv)
 
 		// 2. API key from options
 		if githubToken == "" {
 			githubToken = c.providerOptions.apiKey
-		}
-
-		// 3. Standard GitHub CLI/Copilot locations
-		if githubToken == "" {
-			var err error
-			githubToken, err = config.LoadGitHubToken()
-			if err != nil {
-				logging.Debug("Failed to load GitHub token from standard locations during retry", "error", err)
-			}
 		}
 
 		if githubToken != "" {
@@ -701,7 +683,7 @@ func (c *copilotClient) shouldRetry(ctx context.Context, attempts int, err error
 }
 
 func copilotAuthenticationError(status int) error {
-	return fmt.Errorf("copilot authentication failed (HTTP %d): verify GITHUB_TOKEN or providers.copilot.apiKey", status)
+	return fmt.Errorf("copilot authentication failed (HTTP %d): verify RSCH_COPILOT_TOKEN or providers.copilot.apiKey", status)
 }
 
 func (c *copilotClient) toolCalls(completion openai.ChatCompletion) []message.ToolCall {

@@ -209,9 +209,10 @@ Repository working rules for humans and agents are in [AGENTS.md](AGENTS.md).
 - **Small local models loop.** With `llama3.2:3b` (16k context) through Ollama, the agent reaches the model
   and issues tool calls, but the model repeats the same call. RSCH's repeat guard stops the run after 3
   identical requests. No end-to-end coding task has been demonstrated with a local model yet.
-- **Copilot provider (inherited, experimental).** It can read tokens from GitHub Copilot's own config files
-  (`~/.config/github-copilot/`). GitHub officially supports Copilot sign-in only for partners such as
-  OpenCode, so treat this path as unsupported. Use an API key or a local model. See
+- **Copilot provider (inherited, experimental, opt-in).** It is used only with an explicitly provided token
+  (`RSCH_COPILOT_TOKEN` or `providers.copilot.apiKey`). RSCH no longer reads other tools' stored Copilot
+  credentials or treats `GITHUB_TOKEN` as consent. GitHub officially supports Copilot sign-in only for
+  partners such as OpenCode, so treat this path as unsupported. See
   [docs/research.md](docs/research.md#signing-in-with-an-existing-ai-subscription).
 - **The module path is still upstream's.** It is `github.com/opencode-ai/opencode`, so
   `go install github.com/RamSuryaCH/rsch-cli@latest` does not work. Build from a clone.

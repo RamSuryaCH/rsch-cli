@@ -15,7 +15,7 @@ import (
 )
 
 func TestCopilotRefreshCancellationReachesTokenExchange(t *testing.T) {
-	t.Setenv("GITHUB_TOKEN", "test-github-token")
+	t.Setenv("RSCH_COPILOT_TOKEN", "test-github-token")
 	for _, mode := range []string{"send", "stream"} {
 		t.Run(mode, func(t *testing.T) {
 			started, stopped, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
@@ -79,7 +79,7 @@ func TestCopilotRefreshCancellationReachesTokenExchange(t *testing.T) {
 }
 
 func TestCopilotRefreshWaitIsCancelable(t *testing.T) {
-	t.Setenv("GITHUB_TOKEN", "test-github-token")
+	t.Setenv("RSCH_COPILOT_TOKEN", "test-github-token")
 	started, release := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +173,7 @@ func TestCopilotForbiddenErrorDoesNotExposeCredential(t *testing.T) {
 	}
 	apiErr.StatusCode = http.StatusForbidden
 	retry, _, err := (&copilotClient{}).shouldRetry(context.Background(), 1, apiErr)
-	if retry || err == nil || strings.Contains(err.Error(), secret) || !strings.Contains(err.Error(), "GITHUB_TOKEN") {
+	if retry || err == nil || strings.Contains(err.Error(), secret) || !strings.Contains(err.Error(), "RSCH_COPILOT_TOKEN") {
 		t.Fatalf("expected safe authentication guidance, retry=%t error=%v", retry, err)
 	}
 }

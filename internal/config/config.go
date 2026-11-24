@@ -565,11 +565,11 @@ func hasVertexAICredentials() bool {
 }
 
 func hasCopilotCredentials() bool {
-	// Check for explicit Copilot parameters
+	// Only an explicitly provided token enables Copilot.
 	if token, _ := LoadGitHubToken(); token != "" {
 		return true
 	}
-	return false
+	return strings.TrimSpace(viper.GetString("providers.copilot.apiKey")) != ""
 }
 
 // readConfig handles the result of reading a configuration file.
@@ -1338,52 +1338,18 @@ func UpdateTheme(themeName string) error {
 	return nil
 }
 
-// Tries to load Github token from all possible locations
+// CopilotTokenEnv is the only environment variable RSCH reads a GitHub
+// Copilot token from. RSCH deliberately does not read tokens stored by other
+// tools (for example ~/.config/github-copilot/hosts.json or apps.json) and
+// does not treat a generic GITHUB_TOKEN as consent to use Copilot.
+const CopilotTokenEnv = "RSCH_COPILOT_TOKEN"
+
+// LoadGitHubToken returns an explicitly provided Copilot token from
+// RSCH_COPILOT_TOKEN. Tokens configured as providers.copilot.apiKey are read
+// through normal configuration.
 func LoadGitHubToken() (string, error) {
-	// First check environment variable
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+	if token := strings.TrimSpace(os.Getenv(CopilotTokenEnv)); token != "" {
 		return token, nil
 	}
-
-	// Get config directory
-	var configDir string
-	if xdgConfig := os.Getenv("XDG_CONFIG_HOME"); xdgConfig != "" {
-		configDir = xdgConfig
-	} else if runtime.GOOS == "windows" {
-		if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
-			configDir = localAppData
-		} else {
-			configDir = filepath.Join(os.Getenv("HOME"), "AppData", "Local")
-		}
-	} else {
-		configDir = filepath.Join(os.Getenv("HOME"), ".config")
-	}
-
-	// Try both hosts.json and apps.json files
-	filePaths := []string{
-		filepath.Join(configDir, "github-copilot", "hosts.json"),
-		filepath.Join(configDir, "github-copilot", "apps.json"),
-	}
-
-	for _, filePath := range filePaths {
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			continue
-		}
-
-		var config map[string]map[string]interface{}
-		if err := json.Unmarshal(data, &config); err != nil {
-			continue
-		}
-
-		for key, value := range config {
-			if strings.Contains(key, "github.com") {
-				if oauthToken, ok := value["oauth_token"].(string); ok {
-					return oauthToken, nil
-				}
-			}
-		}
-	}
-
-	return "", fmt.Errorf("GitHub token not found in standard locations")
+	return "", fmt.Errorf("no Copilot token provided; set %s or providers.copilot.apiKey", CopilotTokenEnv)
 }

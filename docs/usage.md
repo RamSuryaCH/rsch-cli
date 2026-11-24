@@ -712,24 +712,21 @@ The AI assistant can access LSP features through the `diagnostics` tool, allowin
 
 While the LSP client implementation supports the full LSP protocol (including completions, hover, definition, etc.), currently only diagnostics are exposed to the AI assistant.
 
-## Using Github Copilot
+## Using GitHub Copilot (experimental, explicit opt-in only)
 
-_Copilot support is currently experimental._
+The Copilot provider is inherited from upstream and is **experimental and unsupported**. GitHub officially
+supports Copilot sign-in only for named partners (see
+[docs/research.md](research.md#signing-in-with-an-existing-ai-subscription)), and the provider exchanges your
+token at an internal GitHub endpoint (`api.github.com/copilot_internal/v2/token`) that GitHub does not document
+for third-party use. Prefer a local model or a provider API key.
 
-### Requirements
-- [Copilot chat in the IDE](https://github.com/settings/copilot) enabled in GitHub settings
-- One of:
-  - VSCode Github Copilot chat extension
-  - Github `gh` CLI
-  - Neovim Github Copilot plugin (`copilot.vim` or `copilot.lua`)
-  - Github token with copilot permissions
+RSCH uses Copilot only when you explicitly provide a token, through one of:
 
-If using one of the above plugins or cli tools, make sure you use the authenticate
-the tool with your github account. This should create a github token at one of the following locations:
-- ~/.config/github-copilot/[hosts,apps].json
-- $XDG_CONFIG_HOME/github-copilot/[hosts,apps].json
+- the `RSCH_COPILOT_TOKEN` environment variable, or
+- `providers.copilot.apiKey` in `rsch.json`.
 
-If using an explicit GitHub token, you may either set the `$GITHUB_TOKEN` environment variable or add it to `rsch.json` at `providers.copilot.apiKey`.
+RSCH does **not** read tokens stored by other tools (for example `~/.config/github-copilot/hosts.json` or
+`apps.json`), and a generic `GITHUB_TOKEN` no longer enables Copilot.
 
 ## Using a self-hosted model provider
 
