@@ -59,6 +59,7 @@ These are from threads that were opened and read on 2026-11-24. Quotes are short
 
 ## Takeaways for RSCH
 
+- Direction: local-first by default, with always-on token optimisation as the headline (roadmap items 1, 1a and 2).
 - Its differentiators, measured against what these threads ask for: token-budgeted context with provenance,
   explicit default-deny approvals, auditable evidence, and serving repository tools to *other* agents over MCP.
 - The largest gaps against all three: real parallel subagents with their own sessions, a stronger loop guard

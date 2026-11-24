@@ -1,10 +1,33 @@
 # RSCH CLI
 
-**A local-first, approval-gated AI coding agent for the terminal, with token-budgeted repository context that editors and other agents can use over MCP.**
+**Fewer tokens, more done: a local-first AI coding agent for the terminal that sends the model only the context it needs.**
+
+RSCH aims to run entirely on your machine, with Ollama or another local OpenAI-compatible server as the
+model and no cloud service or API key required. Hosted providers (Anthropic, OpenAI, Gemini, and others)
+are optional and bring-your-own-key. Every action is approval-gated.
 
 ![RSCH demo recorded on Linux x86-64: doctor, search, context, and mcp serve queried with the MCP Inspector](docs/assets/rsch-demo-linux.gif)
 
 <sub>Recorded on Linux x86-64 with the real binary built from this repository (`docs/assets/rsch-demo-linux.gif`). None of the commands shown call a model. Not recorded on macOS.</sub>
+
+## Token optimisation: what works today and what is planned
+
+The goal is always-on, automatic token optimisation. Today it is only partly there:
+
+| Technique | Status (verified 2026-11-24 on Linux) |
+| --- | --- |
+| Token-budgeted context: `rsch context "<query>" --budget N` returns ranked file and line matches with provenance inside an approximate budget | **Works.** In the demo, a 400-token budget used 395 tokens across 3 selected files |
+| Smart file and line selection: `rsch search`, plus `get_context` and `search_repository` over MCP | **Works** for search and context retrieval. Not yet wired automatically into the agent loop |
+| Trimming tool output | **Partial.** Inherited from upstream: shell output is capped at 30,000 characters. No smarter trimming |
+| Summarising long histories (auto-compact at 95% of the context window) | **Partial.** Inherited from upstream and wired into the TUI only. Not verified here |
+| Prompt and context compression, deduplication, caching of repeated context | **Planned.** See [roadmap item 1](docs/roadmap.md) |
+| Measured token savings | **None yet.** A benchmark that runs the same tasks with the optimiser on and off is planned. Only measured numbers will be published |
+
+Token counts in `rsch context` are approximate: about 4 bytes per token (`approximateTokens` in `internal/intelligence`), not a model tokenizer.
+
+**Defaults today:** RSCH does **not** yet pick a local model on its own. It uses a local server only when
+`LOCAL_ENDPOINT` is set (for example `http://localhost:11434/v1` for Ollama). Otherwise it uses the first
+hosted provider whose credentials it finds. Making local the default is on the [roadmap](docs/roadmap.md).
 
 ## Built on OpenCode, and what is new
 
@@ -133,14 +156,14 @@ go build -trimpath -o rsch .
 ./rsch search "func main" --limit 5
 ./rsch context "how are background jobs stopped" --budget 800
 
-# With a hosted provider
-export ANTHROPIC_API_KEY=...        # or OPENAI_API_KEY, GEMINI_API_KEY, ...
-./rsch exec "Summarize this repository" -q
-
-# With a local model through Ollama (OpenAI-compatible API, so include /v1)
+# Local model through Ollama, with no API key (OpenAI-compatible API, so include /v1)
 export LOCAL_ENDPOINT=http://localhost:11434/v1
 ./rsch doctor                        # should report a configured local provider
 ./rsch                               # interactive TUI
+
+# Optional: a hosted provider (bring your own key)
+export ANTHROPIC_API_KEY=...        # or OPENAI_API_KEY, GEMINI_API_KEY, ...
+./rsch exec "Summarize this repository" -q
 ```
 
 For local models, the server's context window must hold RSCH's agent prompt and tool definitions, which come
