@@ -1,0 +1,31 @@
+RSCH CLI
+Copyright (c) 2026 Ram Surya Chelluboyina
+
+This project is a derivative of OpenCode (the original Go implementation):
+  https://github.com/opencode-ai/opencode
+  Copyright (c) 2025 Kujtim Hoxha
+  Licensed under the MIT License (see LICENSE).
+  The upstream repository was archived in September 2025; its authors
+  continued development as Charm Crush (https://github.com/charmbracelet/crush).
+
+RSCH was forked from upstream commit 73ee493 (2025-09-17). Upstream code,
+including the Bubble Tea TUI, provider adapters, core tools, LSP client and
+SQLite session store, remains under the upstream MIT copyright. Modifications
+and new files are Copyright (c) 2026 Ram Surya Chelluboyina, also under the
+MIT License.
+
+The Go module path is still github.com/opencode-ai/opencode. It is kept
+unchanged for now to avoid a repository-wide import rewrite; it does not imply
+that this project is published or endorsed by the OpenCode or Charm teams.
+
+The upstream LSP client was based on mcp-language-server by @isaacphi
+(https://github.com/isaacphi/mcp-language-server, BSD-3-Clause), as credited
+in the upstream project.
+
+No source code from openai/codex (Apache-2.0) is included. The macOS
+sandbox (internal/sandbox) is an independent implementation that invokes the
+system sandbox-exec tool; the general approach of a Seatbelt-confined
+workspace was inspired by Codex CLI. If Codex-derived code is added later,
+its Apache-2.0 license text and change notices must be added here.
+
+Third-party Go dependencies are listed in go.mod and keep their own licenses.
