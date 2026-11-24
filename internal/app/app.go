@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/opencode-ai/opencode/internal/optimizer"
 	"io"
 	"os"
 	"strings"
@@ -457,6 +458,9 @@ func (a *App) RunNonInteractiveWithOptions(ctx context.Context, prompt string, o
 		return fmt.Errorf("write non-interactive result: %w", err)
 	}
 
+	if totals := optimizer.Default.Totals(sess.ID); totals.Requests > 0 {
+		fmt.Fprintln(opts.Stderr, optimizerSummary(totals))
+	}
 	logging.Info("Non-interactive run completed", "session_id", sess.ID)
 
 	return nil
@@ -737,4 +741,20 @@ func (app *App) Shutdown() {
 			logging.Error("Failed to shutdown LSP client", "name", name, "error", err)
 		}
 	}
+}
+
+// optimizerSummary is the per-run token line printed to stderr by
+// `rsch exec`. Counts are estimates (about 4 bytes per token) over the
+// message history only; the system prompt and tool definitions are not
+// included because the optimizer does not change them.
+func optimizerSummary(totals optimizer.Stats) string {
+	if !totals.Enabled {
+		return fmt.Sprintf("rsch: optimizer off; history ~%d tokens over %d requests (estimate, 4 bytes/token)", totals.TokensBefore, totals.Requests)
+	}
+	percent := 0.0
+	if totals.TokensBefore > 0 {
+		percent = 100 * float64(totals.Saved()) / float64(totals.TokensBefore)
+	}
+	return fmt.Sprintf("rsch: optimizer saved ~%d of ~%d history tokens (%.1f%%) over %d requests (estimate, 4 bytes/token; %d trimmed, %d deduplicated, %d compacted)",
+		totals.Saved(), totals.TokensBefore, percent, totals.Requests, totals.Trimmed, totals.Deduplicated, totals.Compacted)
 }

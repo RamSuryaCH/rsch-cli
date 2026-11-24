@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/opencode-ai/opencode/internal/optimizer"
 	"strings"
 	"sync"
 	"time"
@@ -483,7 +484,12 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 			a.bus.Publish(responseEvent)
 		}()
 	}
-	eventChan := a.provider.StreamResponse(ctx, msgHistory, a.tools)
+	sendHistory, optimizerStats := optimizer.Default.Optimize(sessionID, msgHistory, model.ContextWindow)
+	logging.Debug("Prompt optimizer", "session_id", sessionID, "enabled", optimizerStats.Enabled,
+		"tokens_before", optimizerStats.TokensBefore, "tokens_after", optimizerStats.TokensAfter,
+		"deduplicated", optimizerStats.Deduplicated, "trimmed", optimizerStats.Trimmed,
+		"compacted", optimizerStats.Compacted, "cache_hits", optimizerStats.CacheHits)
+	eventChan := a.provider.StreamResponse(ctx, sendHistory, a.tools)
 
 	assistantMsg, err := a.messages.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Assistant,

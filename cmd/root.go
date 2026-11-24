@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/opencode-ai/opencode/internal/optimizer"
 	"io"
 	"os"
 	"os/signal"
@@ -860,6 +861,9 @@ func init() {
 		return &cliUsageError{err: err}
 	})
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		if noOptimize, _ := cmd.Flags().GetBool("no-optimize"); noOptimize {
+			_ = os.Setenv(optimizer.DisableEnv, "off")
+		}
 		cwd, err := cmd.Flags().GetString("cwd")
 		if err != nil || cwd == "" {
 			return nil
@@ -884,6 +888,7 @@ func init() {
 
 	// Add quiet flag to hide spinner in non-interactive mode
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "Hide spinner in non-interactive mode")
+	rootCmd.PersistentFlags().Bool("no-optimize", false, "Send conversation history to the model without token optimization (same as RSCH_OPTIMIZER=off)")
 
 	rootCmd.PersistentFlags().Bool("auto-approve", false,
 		"Automatically approve permission requests in non-interactive mode (unsafe; default: deny)")
