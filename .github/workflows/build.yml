@@ -1,0 +1,302 @@
+name: build
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.27.0'
+  GOVULNCHECK_VERSION: 'v1.1.4'
+  GOSEC_VERSION: 'v2.22.8'
+
+jobs:
+  minimum-go:
+    name: Minimum Go compatibility
+    runs-on: ubuntu-latest
+    env:
+      # A newer transitive requirement must fail instead of silently upgrading.
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up the minimum Go version
+        uses: actions/setup-go@v5.5.0
+        with:
+          go-version: '1.26.0'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Test minimum Go compatibility
+        run: go test -count=1 ./...
+
+  quality:
+    name: Go quality and coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=$(find . -type f -name '*.go' -not -path './vendor/*' -print)
+          test -z "$(gofmt -l ${files})"
+
+      - name: Run vet
+        run: go vet ./...
+
+      - name: Run unit tests
+        run: go test -count=1 ./...
+
+      - name: Run race tests
+        run: go test -race -count=1 ./...
+
+      - name: Collect coverage
+        run: go test -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: go-coverage
+          path: coverage.out
+          if-no-files-found: error
+          retention-days: 14
+
+  security:
+    name: Security checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Check known vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} ./...
+
+      - name: Run gosec
+        run: go run github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION} ./...
+
+  benchmark-and-fuzz:
+    name: Benchmarks and fuzz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Run benchmarks
+        run: go test -run '^$' -bench=. -benchmem ./...
+
+      - name: Run release-matrix fuzz smoke test
+        run: go test ./internal/release -run '^$' -fuzz=FuzzValidateTarget -fuzztime=30s
+
+  cross-build:
+    name: Cross-build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            extension: ''
+          - goos: linux
+            goarch: arm64
+            extension: ''
+          - goos: darwin
+            goarch: amd64
+            extension: ''
+          - goos: darwin
+            goarch: arm64
+            extension: ''
+          - goos: windows
+            goarch: amd64
+            extension: .exe
+          - goos: windows
+            goarch: arm64
+            extension: .exe
+    env:
+      CGO_ENABLED: '0'
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Build target
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          go build -trimpath -ldflags='-s -w -buildid=' -o "dist/rsch-${GOOS}-${GOARCH}${{ matrix.extension }}" .
+
+      - name: Upload cross-build artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rsch-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/rsch-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.extension }}
+          if-no-files-found: error
+          retention-days: 7
+
+  runtime-smoke:
+    name: Native runtime smoke (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            extension: ''
+            command: ./rsch --version
+          - runner: macos-14
+            goos: darwin
+            goarch: arm64
+            extension: ''
+            command: ./rsch --version
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+            extension: .exe
+            command: .\rsch.exe --version
+    env:
+      CGO_ENABLED: '0'
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Build native binary
+        run: go build -trimpath -ldflags='-s -w -buildid=' -o rsch${{ matrix.extension }} .
+
+      - name: Run version smoke test
+        run: ${{ matrix.command }}
+
+  cli-e2e:
+    name: CLI contract E2E
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Run CLI E2E smoke test
+        run: ./scripts/e2e.sh
+
+  packaging-contracts:
+    name: Packaging contracts (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-14]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+
+      - name: Run installer and archive validator contract tests
+        run: |
+          bash scripts/test_install.sh
+          bash scripts/test_release_archive_checks.sh
+
+  e2e-hook:
+    name: Optional E2E hook
+    needs:
+      - quality
+      - minimum-go
+      - security
+      - benchmark-and-fuzz
+      - cross-build
+      - runtime-smoke
+      - cli-e2e
+      - packaging-contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+
+      - name: Run configured E2E hook
+        env:
+          # Set the repository variable E2E_COMMAND to enable project-specific E2E tests.
+          E2E_COMMAND: ${{ vars.E2E_COMMAND }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${E2E_COMMAND}" ]]; then
+            echo 'E2E_COMMAND is not configured; E2E hook skipped.'
+            exit 0
+          fi
+          bash -c "${E2E_COMMAND}"

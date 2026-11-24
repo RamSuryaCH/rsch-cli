@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "${repo_root}"
+
+minor=false
+dry_run=false
+while (($# > 0)); do
+    case "$1" in
+        --minor) minor=true ;;
+        --dry-run) dry_run=true ;;
+        *) echo "Unknown parameter: $1" >&2; exit 1 ;;
+    esac
+    shift
+done
+
+git fetch --tags --prune
+
+latest_tag=$(git tag --sort=-version:refname | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
+if [[ -z "${latest_tag}" ]]; then
+    echo 'No semantic-version tags found' >&2
+    exit 1
+fi
+
+if [[ -n "$(git status --porcelain)" ]]; then
+    echo 'Release requires a clean working tree' >&2
+    exit 1
+fi
+
+version=${latest_tag#v}
+IFS=. read -r major_number minor_number patch_number <<<"${version}"
+if [[ "${minor}" == true ]]; then
+    minor_number=$((minor_number + 1))
+    patch_number=0
+else
+    patch_number=$((patch_number + 1))
+fi
+
+new_tag="v${major_number}.${minor_number}.${patch_number}"
+if git rev-parse --verify --quiet "refs/tags/${new_tag}" >/dev/null; then
+    echo "Tag already exists: ${new_tag}" >&2
+    exit 1
+fi
+
+echo "Latest tag: ${latest_tag}"
+echo "New tag: ${new_tag}"
+if [[ "${dry_run}" == true ]]; then
+    exit 0
+fi
+
+command -v goreleaser >/dev/null 2>&1 || {
+    echo 'goreleaser is required to create a release tag' >&2
+    exit 1
+}
+go test -count=1 ./...
+./scripts/e2e.sh
+./scripts/test_install.sh
+bash scripts/test_release_archive_checks.sh
+goreleaser check
+
+git tag --annotate "${new_tag}" --message "Release ${new_tag}"
+git push origin "${new_tag}"

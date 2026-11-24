@@ -1,0 +1,103 @@
+version: 2
+project_name: rsch
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: rsch
+    main: ./main.go
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -buildid= -X github.com/opencode-ai/opencode/internal/version.Version={{.Version}}
+    mod_timestamp: '{{ .CommitTimestamp }}'
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: >-
+      rsch-
+      {{- if eq .Os "darwin" }}mac-
+      {{- else if eq .Os "windows" }}windows-
+      {{- else if eq .Os "linux" }}linux-{{ end }}
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: '0.0.0-{{ .Timestamp }}'
+
+aurs:
+  - name: rsch-bin
+    homepage: https://github.com/RamSuryaCH/rsch
+    description: RSCH AI software engineering operating system
+    maintainers:
+      - Ram Surya Chelluboyina
+    license: MIT
+    private_key: '{{ .Env.AUR_KEY }}'
+    git_url: ssh://aur@aur.archlinux.org/rsch-bin.git
+    provides:
+      - rsch
+    conflicts:
+      - rsch
+    package: |-
+      install -Dm755 ./rsch "${pkgdir}/usr/bin/rsch"
+
+brews:
+  - name: rsch
+    homepage: https://github.com/RamSuryaCH/rsch
+    description: RSCH AI software engineering operating system
+    license: MIT
+    repository:
+      owner: RamSuryaCH
+      name: homebrew-tap
+
+nfpms:
+  - maintainer: Ram Surya Chelluboyina
+    description: RSCH AI software engineering operating system
+    homepage: https://github.com/RamSuryaCH/rsch
+    license: MIT
+    vendor: RSCH
+    bindir: /usr/bin
+    formats:
+      - deb
+      - rpm
+    file_name_template: >-
+      {{ .ProjectName }}-
+      {{- if eq .Os "darwin" }}mac
+      {{- else }}{{ .Os }}{{ end }}-{{ .Arch }}
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^doc:'
+      - '^test:'
+      - '^ci:'
+      - '^ignore:'
+      - '^example:'
+      - '^wip:'

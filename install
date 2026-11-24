@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP=rsch
+RELEASE_REPO=${RSCH_RELEASE_REPO:-RamSuryaCH/rsch}
+INSTALL_DIR=${RSCH_INSTALL_DIR:-${HOME}/.rsch/bin}
+temporary=''
+staged_file=''
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+ORANGE='\033[38;2;255;140;0m'
+NC='\033[0m'
+
+print_message() {
+    local level=$1
+    local message=$2
+    local color=''
+
+    case "$level" in
+        info) color="${GREEN}" ;;
+        warning) color="${YELLOW}" ;;
+        error) color="${RED}" ;;
+    esac
+
+    echo -e "${color}${message}${NC}"
+}
+
+cleanup() {
+    if [[ -n "${staged_file}" && -e "${staged_file}" ]]; then
+        rm -f -- "${staged_file}"
+    fi
+    if [[ -n "${temporary}" && -d "${temporary}" ]]; then
+        rm -rf -- "${temporary}"
+    fi
+}
+trap cleanup EXIT
+
+for dependency in awk basename curl grep install mkdir mktemp mv rm tar tr uname; do
+    command -v "${dependency}" >/dev/null 2>&1 || {
+        print_message error "${dependency} is required"
+        exit 1
+    }
+done
+
+requested_version=${VERSION:-}
+if [[ -n "${requested_version}" ]]; then
+    requested_version=${requested_version#v}
+    if [[ ! "${requested_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+        print_message error "Invalid version: ${requested_version}"
+        exit 1
+    fi
+fi
+
+os=$(uname -s | tr '[:upper:]' '[:lower:]')
+if [[ "${os}" == 'darwin' ]]; then
+    os=mac
+fi
+arch=$(uname -m)
+if [[ "${arch}" == 'aarch64' ]]; then
+    arch=arm64
+fi
+if [[ "${arch}" == 'x86_64' ]]; then
+    arch=x86_64
+fi
+case "${os}/${arch}" in
+    linux/x86_64|linux/arm64|mac/x86_64|mac/arm64) ;;
+    *)
+        print_message error "Unsupported OS/Arch: ${os}/${arch}"
+        exit 1
+        ;;
+esac
+
+if [[ -z "${requested_version}" ]]; then
+    api_url="https://api.github.com/repos/${RELEASE_REPO}/releases/latest"
+    latest_json=$(curl --fail --silent --show-error --location --retry 3 "${api_url}")
+    specific_version=$(awk -F'"' '/"tag_name"[[:space:]]*:/ {print $4; exit}' <<<"${latest_json}")
+    specific_version=${specific_version#v}
+    if [[ -z "${specific_version}" ]]; then
+        print_message error 'Failed to determine the latest release version'
+        exit 1
+    fi
+else
+    specific_version=${requested_version}
+fi
+
+if [[ ! "${specific_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+    print_message error "Invalid release version: ${specific_version}"
+    exit 1
+fi
+
+release_tag="v${specific_version}"
+filename="${APP}-${os}-${arch}.tar.gz"
+base_url=${RSCH_RELEASE_BASE_URL:-https://github.com/${RELEASE_REPO}/releases/download/${release_tag}}
+base_url=${base_url%/}
+
+check_version() {
+    if [[ -x "${INSTALL_DIR}/${APP}" ]]; then
+        installed_version=$("${INSTALL_DIR}/${APP}" --version 2>/dev/null || true)
+        if [[ "${installed_version}" == "${specific_version}" ]]; then
+            print_message info "Version ${YELLOW}${specific_version}${GREEN} already installed"
+            return 0
+        fi
+        print_message info "Installed version: ${YELLOW}${installed_version}"
+    fi
+    return 1
+}
+
+checksum_command() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        print_message error 'sha256sum or shasum is required to verify the release'
+        return 1
+    fi
+}
+
+download_and_install() {
+    local archive checksums expected actual entry entries executable_count executable_metadata
+    temporary=$(mktemp -d "${TMPDIR:-/tmp}/${APP}.XXXXXX")
+    archive="${temporary}/${filename}"
+    checksums="${temporary}/checksums.txt"
+
+    print_message info "Downloading ${ORANGE}${APP} ${GREEN}version: ${YELLOW}${specific_version}${GREEN}..."
+    curl --fail --silent --show-error --location --retry 3 "${base_url}/${filename}" --output "${archive}"
+    curl --fail --silent --show-error --location --retry 3 "${base_url}/checksums.txt" --output "${checksums}"
+
+    expected=$(awk -v file="${filename}" '$2 == file {print $1; exit}' "${checksums}")
+    if [[ ! "${expected}" =~ ^[[:xdigit:]]{64}$ ]]; then
+        print_message error "No valid SHA-256 checksum found for ${filename}"
+        exit 1
+    fi
+    actual=$(checksum_command "${archive}")
+    if [[ "${actual}" != "${expected}" ]]; then
+        print_message error "Checksum verification failed for ${filename}"
+        exit 1
+    fi
+
+    # Check tar's exit status before reading entries; process substitution would
+    # otherwise hide a corrupt archive's listing failure.
+    entries=$(tar -tzf "${archive}")
+    while IFS= read -r entry; do
+        case "${entry}" in
+            /*|../*|*/../*|*/..)
+                print_message error "Release archive contains an unsafe path: ${entry}"
+                exit 1
+                ;;
+        esac
+    done <<<"${entries}"
+
+    executable_count=$(awk -v app="${APP}" '$0 == app { count++ } END { print count+0 }' <<<"${entries}")
+    if [[ "${executable_count}" != '1' ]]; then
+        print_message error "Release archive must contain exactly one ${APP} at archive root"
+        exit 1
+    fi
+    executable_metadata=$(tar -tvzf "${archive}" -- "${APP}")
+    if [[ "${executable_metadata}" != -* ]]; then
+        print_message error "Release archive executable must be a regular file: ${APP}"
+        exit 1
+    fi
+    # Stream only the executable. Other archive members (including links) must
+    # never be materialized on the installer's filesystem.
+    tar -xOzf "${archive}" -- "${APP}" >"${temporary}/${APP}"
+    mkdir -p "${INSTALL_DIR}"
+    staged_file=$(mktemp "${INSTALL_DIR}/.${APP}.new.XXXXXX")
+    install -m 0755 "${temporary}/${APP}" "${staged_file}"
+    mv -f -- "${staged_file}" "${INSTALL_DIR}/${APP}"
+    staged_file=''
+}
+
+if ! check_version; then
+    download_and_install
+fi
+
+add_to_path() {
+    local config_file=$1
+    local command=$2
+
+    if ! grep -Fqx "${command}" "${config_file}" 2>/dev/null; then
+        printf '\n# rsch\n%s\n' "${command}" >>"${config_file}"
+        print_message info "Successfully added ${ORANGE}rsch ${GREEN}to \$PATH in ${config_file}"
+    fi
+}
+
+XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-${HOME}/.config}
+current_shell=$(basename "${SHELL:-sh}")
+config_files=()
+case "${current_shell}" in
+    fish) config_files=("${HOME}/.config/fish/config.fish") ;;
+    zsh) config_files=("${HOME}/.zshrc" "${HOME}/.zshenv" "${XDG_CONFIG_HOME}/zsh/.zshrc" "${XDG_CONFIG_HOME}/zsh/.zshenv") ;;
+    bash) config_files=("${HOME}/.bashrc" "${HOME}/.bash_profile" "${HOME}/.profile" "${XDG_CONFIG_HOME}/bash/.bashrc" "${XDG_CONFIG_HOME}/bash/.bash_profile") ;;
+    ash|sh) config_files=("${HOME}/.ashrc" "${HOME}/.profile" "/etc/profile") ;;
+    *) config_files=("${HOME}/.bashrc" "${HOME}/.bash_profile" "${XDG_CONFIG_HOME}/bash/.bashrc" "${XDG_CONFIG_HOME}/bash/.bash_profile") ;;
+esac
+
+config_file=''
+for file in "${config_files[@]}"; do
+    if [[ -f "${file}" && -w "${file}" ]]; then
+        config_file=${file}
+        break
+    fi
+done
+
+if [[ "${RSCH_NO_MODIFY_PATH:-0}" == '1' ]]; then
+    print_message warning "Add this directory to your PATH: ${INSTALL_DIR}"
+elif [[ -z "${config_file}" ]]; then
+    print_message warning "Manually add this directory to your PATH: ${INSTALL_DIR}"
+else
+    printf -v quoted_install_dir '%q' "${INSTALL_DIR}"
+    case "${current_shell}" in
+        fish) add_to_path "${config_file}" "fish_add_path -- ${quoted_install_dir}" ;;
+        zsh|bash|ash|sh) add_to_path "${config_file}" "export PATH=${quoted_install_dir}:\$PATH" ;;
+        *) print_message warning "Manually add this directory to your PATH: ${INSTALL_DIR}" ;;
+    esac
+fi
+
+if [[ "${GITHUB_ACTIONS:-}" == 'true' && -n "${GITHUB_PATH:-}" ]]; then
+    printf '%s\n' "${INSTALL_DIR}" >>"${GITHUB_PATH}"
+    print_message info "Added ${INSTALL_DIR} to \$GITHUB_PATH"
+fi
