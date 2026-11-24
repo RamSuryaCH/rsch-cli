@@ -11,6 +11,26 @@ import (
 	"strings"
 )
 
+// processIsZombie reports whether pid has exited but has not been reaped yet.
+// kill(pid, 0) still succeeds for such a process and Linux ps keeps its
+// original lstart and comm, so without this check a stopped job whose parent
+// has not called wait(2) looks like it is still running.
+func processIsZombie(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	for _, candidate := range []string{"/bin/ps", "/usr/bin/ps"} {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			output, err := exec.Command(candidate, "-p", strconv.Itoa(pid), "-o", "stat=").Output()
+			if err != nil {
+				return false
+			}
+			return strings.HasPrefix(strings.TrimSpace(string(output)), "Z")
+		}
+	}
+	return false
+}
+
 func backgroundProcessIdentity(pid int) (string, error) {
 	if pid <= 0 {
 		return "", errors.New("invalid process id")

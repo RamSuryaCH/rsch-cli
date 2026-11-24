@@ -373,7 +373,7 @@ func validateProcessIdentity(job Job) error {
 }
 
 func processIdentityMatches(job Job) bool {
-	if strings.TrimSpace(job.ProcessIdentity) == "" || !process.Alive(job.PID) {
+	if strings.TrimSpace(job.ProcessIdentity) == "" || !process.Alive(job.PID) || processIsZombie(job.PID) {
 		return false
 	}
 	actual, err := backgroundProcessIdentity(job.PID)

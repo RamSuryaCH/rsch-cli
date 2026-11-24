@@ -9,6 +9,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// processIsZombie is a Unix concept; Windows process handles report exit
+// directly, so an exited process never matches its identity there.
+func processIsZombie(pid int) bool { return false }
+
 func backgroundProcessIdentity(pid int) (string, error) {
 	if pid <= 0 {
 		return "", errors.New("invalid process id")
