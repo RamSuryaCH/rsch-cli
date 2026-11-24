@@ -24,6 +24,54 @@ The older slice-by-slice history is in [ROADMAP.md](ROADMAP.md).
 | 13 | Background job stop on Linux | Correctness | **done** (6e20e9b, zombie handling; the test now passes) |
 | 14 | IDE integration via ACP | Editor embedding, as in Grok Build | **planned.** MCP server mode covers some of this |
 
+## My picks, ranked (why each matters most)
+
+1. **Token optimiser plus benchmark (items 1, 1a).** This is the headline promise and the top pain point
+   (research §1). The benchmark turns it from a claim into a number reviewers can check.
+2. **Local-first default and a stronger loop guard (items 2, 4).** Without these, "works with no cloud" fails
+   on first run: there is no default provider, and small models loop. Both are small, testable changes.
+3. **Provider layer clean-up (P1–P3 below).** Removing reads of another tool's stored Copilot credentials is
+   a correctness and terms issue, and a generic OpenAI-compatible provider unlocks Ollama, LM Studio, vLLM
+   and OpenRouter through one code path.
+4. **Live context meter (item 5).** It makes the optimiser visible and is cheap once token accounting exists.
+5. **Subagent task tool (item 6).** It has high value, but it is larger and depends on per-session token
+   accounting and permission profiles.
+6. **Official Sign in with ChatGPT (P5).** It is the only sanctioned subscription path for a local
+   open-source app (research, subscription section). It is worth doing after the provider layer is clean.
+7. **Releases and Homebrew tap (item 10).** These matter for adoption, but they are gated on Surya's go-ahead.
+
+## Pluggable provider layer
+
+Audit of `internal/llm/provider` and `internal/config` on 2026-11-24:
+
+| Provider / capability | Today | Planned |
+| --- | --- | --- |
+| Anthropic (native API) | **exists** (`anthropic.go`) | keep |
+| OpenAI (native API) | **exists** (`openai.go`) | keep |
+| Generic OpenAI-compatible endpoint with any base URL and named instances | **partial.** Groq, OpenRouter, xAI and local all reuse `newOpenAIClient`, but the only user-settable base URL is `LOCAL_ENDPOINT` (plus Azure's endpoint) | `providers.<name> = {type: "openai-compatible", baseURL, apiKeyEnv}` for any number of endpoints (vLLM, llama.cpp server, LiteLLM, and so on) |
+| OpenRouter | **exists** (OpenAI client, `OPENROUTER_API_KEY`) | move onto the generic type |
+| AWS Bedrock | **exists** (`bedrock.go`, standard AWS credential chain). Upstream lists Claude 3.7 Sonnet only | model discovery and more models |
+| Ollama / LM Studio | **partial** (`LOCAL_ENDPOINT`; fixed 2026-11-24) | first-class `ollama` and `lmstudio` types with auto-probe (item 2), context-window check, and an embedding-model filter |
+| xAI, Gemini, Vertex AI, Azure OpenAI, Groq | **exist** | keep |
+| Mock (deterministic, offline) | **exists** (`mock.go`, `RSCH_MOCK_RESPONSE`) | use it in the benchmark harness and CI-free tests |
+| Routed and fallback providers | **exist** (`routed.go`, `fallback.go`, with tests) | expose them in config, so you can, for example, route cheap tasks to local and fall back to hosted |
+| Health checks | **partial.** `rsch doctor` checks that credentials are *present*, not that the endpoint answers | `rsch doctor --providers`: list models, run a one-token completion, measure latency, and check context size |
+| Per-provider token accounting | **partial.** `rsch cost` shows persisted session totals; nothing per provider or per turn | per provider, model and turn: prompt, completion, cached and tool-definition tokens, from provider-reported `usage` where available |
+
+**Provider-layer roadmap:**
+
+- **P1.** Define one `Provider` interface that every backend implements: `Models()`, `Health()`, `Send`/`Stream`,
+  and `Usage` reporting. Today each backend has its own client, wrapped by a generic `baseProvider`.
+- **P2.** Add the generic OpenAI-compatible type, plus Ollama and LM Studio presets on top of it.
+- **P3.** Stop reading another tool's stored Copilot credentials (`~/.config/github-copilot/*.json`). Keep
+  only an explicitly provided token (`GITHUB_TOKEN` or config) until GitHub documents a program RSCH qualifies
+  for. Mark the Copilot provider experimental and unsupported.
+- **P4.** Health checks and per-provider token accounting (feeds items 1a and 5).
+- **P5.** Official Sign in with ChatGPT for plan usage. It is allowed for open-source, locally run apps; see
+  [research.md](research.md#signing-in-with-an-existing-ai-subscription).
+- No subscription sign-in for Anthropic, Kiro, Gemini, Copilot or xAI unless their documented policies change.
+  Use their API keys, cloud credentials (Bedrock, Vertex) or local models instead.
+
 ## Default provider today, and what local-first would take
 
 Checked in `internal/config/config.go` and `internal/llm/models/local.go` on 2026-11-24.
